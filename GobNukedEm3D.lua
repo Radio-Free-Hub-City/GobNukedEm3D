@@ -58,6 +58,7 @@ local mhAnimProgress = 0
 local ohAnimProgress = 0
 local bobTimer = 0
 local swingPattern = 1
+local activeHandToggle = true
 
 local function IsPlayerMoving()
     local success, speed = pcall(GetUnitSpeed, "player")
@@ -113,7 +114,7 @@ local function ApplyTransforms()
     end
 
     -- Mainhand Animations
-    if mhAnimProgress > 0 then
+    if mhAnimProgress > 0 and mhType ~= "NONE" then
         local p = mhAnimProgress
         if mhType == "GUN" then
             mhY = mhY - (p * 0.25)
@@ -183,7 +184,7 @@ local function ApplyTransforms()
     end
 
     -- Offhand Animations
-    if ohAnimProgress > 0 then
+    if ohAnimProgress > 0 and ohType ~= "NONE" then
         local p = ohAnimProgress
         if ohType == "GUN" then
             ohY = ohY - (p * 0.25)
@@ -286,8 +287,25 @@ fpFrame:SetScript("OnUpdate", function(self, elapsed)
 end)
 
 local function TriggerAttackAnimation()
-    mhAnimProgress = 1.0
-    ohAnimProgress = 1.0
+    local mhType = GobNukedEm3DDB.mh_type or "GUN"
+    local ohType = GobNukedEm3DDB.oh_type or "MELEE_1H"
+
+    local mhValid = (mhType ~= "NONE")
+    local ohValid = (ohType ~= "NONE")
+
+    if mhValid and ohValid then
+        if activeHandToggle then
+            mhAnimProgress = 1.0
+        else
+            ohAnimProgress = 1.0
+        end
+        activeHandToggle = not activeHandToggle
+    elseif mhValid then
+        mhAnimProgress = 1.0
+    elseif ohValid then
+        ohAnimProgress = 1.0
+    end
+
     swingPattern = (swingPattern % 3) + 1
     ApplyTransforms()
 end
@@ -301,6 +319,11 @@ local function GetWeaponItemID(slotID)
     local overridesKey = isMH and "mh_overrides" or "oh_overrides"
 
     local currentType = GobNukedEm3DDB[typeKey] or (isMH and "GUN" or "MELEE_1H")
+    
+    if currentType == "NONE" then
+        return nil
+    end
+
     local overrides = GobNukedEm3DDB[overridesKey] or {}
     local overrideVal = overrides[currentType]
 
@@ -424,6 +447,7 @@ closeBtn:SetPoint("TOPRIGHT", configPanel, "TOPRIGHT", -5, -5)
 local currentTab = "MH"
 
 local WEAPON_TYPES = {
+    { text = "None / Hidden (No Animation)", value = "NONE" },
     { text = "Gun / Crossbow (Recoil)", value = "GUN" },
     { text = "Bow (Draw / Release)", value = "BOW" },
     { text = "1H Melee (Combo Swings)", value = "MELEE_1H" },
@@ -442,7 +466,7 @@ typeButton:SetSize(280, 24)
 typeButton:SetPoint("TOPLEFT", dropdownLabel, "BOTTOMLEFT", 0, -5)
 
 local typeMenu = CreateFrame("Frame", nil, configPanel)
-typeMenu:SetSize(280, 182)
+typeMenu:SetSize(280, 204)
 typeMenu:SetPoint("TOPLEFT", typeButton, "BOTTOMLEFT", 0, -2)
 typeMenu:SetFrameStrata("DIALOG")
 typeMenu:Hide()
@@ -460,7 +484,7 @@ overrideEditBox:SetSize(280, 22)
 overrideEditBox:SetPoint("TOPLEFT", overrideLabel, "BOTTOMLEFT", 0, -5)
 overrideEditBox:SetAutoFocus(false)
 
-local RefreshSliderValues -- Forward declaration
+local RefreshUIValues -- Forward declaration
 
 local function UpdateDropdownText()
     local typeKey = (currentTab == "MH") and "mh_type" or "oh_type"
@@ -490,7 +514,7 @@ for i, item in ipairs(WEAPON_TYPES) do
         GobNukedEm3DDB[typeKey] = item.value
         typeMenu:Hide()
 
-        RefreshSliderValues()
+        RefreshUIValues()
         UpdateWeaponModels()
     end)
 end
@@ -512,9 +536,9 @@ overrideEditBox:SetScript("OnEnterPressed", function(self)
     UpdateWeaponModels()
 end)
 
-local function CreateSlider(name, label, minVal, maxVal, step, yOffset)
-    local slider = CreateFrame("Slider", name, configPanel, "OptionsSliderTemplate")
-    slider:SetPoint("TOPLEFT", configPanel, "TOPLEFT", 30, yOffset)
+local function CreateSlider(parent, name, label, minVal, maxVal, step, yOffset)
+    local slider = CreateFrame("Slider", name, parent, "OptionsSliderTemplate")
+    slider:SetPoint("TOPLEFT", parent, "TOPLEFT", 30, yOffset)
     slider:SetSize(280, 20)
     slider:SetMinMaxValues(minVal, maxVal)
     slider:SetValueStep(step)
@@ -523,17 +547,17 @@ local function CreateSlider(name, label, minVal, maxVal, step, yOffset)
     return slider
 end
 
-local sScale = CreateSlider("GN3D_S_Scale", "Model Scale", 0.5, 6.0, 0.1, -200)
-local sFacing = CreateSlider("GN3D_S_Facing", "Rotation / Facing", 0.0, 6.28, 0.05, -250)
-local sPosX = CreateSlider("GN3D_S_PosX", "Position X (Left / Right)", -2.0, 2.0, 0.05, -300)
-local sPosY = CreateSlider("GN3D_S_PosY", "Position Y (Depth)", -2.0, 2.0, 0.05, -350)
-local sPosZ = CreateSlider("GN3D_S_PosZ", "Position Z (Up / Down)", -2.0, 2.0, 0.05, -400)
+local sScale = CreateSlider(configPanel, "GN3D_S_Scale", "Model Scale", 0.5, 6.0, 0.1, -200)
+local sFacing = CreateSlider(configPanel, "GN3D_S_Facing", "Rotation / Facing", 0.0, 6.28, 0.05, -250)
+local sPosX = CreateSlider(configPanel, "GN3D_S_PosX", "Position X (Left / Right)", -2.0, 2.0, 0.05, -300)
+local sPosY = CreateSlider(configPanel, "GN3D_S_PosY", "Position Y (Depth)", -2.0, 2.0, 0.05, -350)
+local sPosZ = CreateSlider(configPanel, "GN3D_S_PosZ", "Position Z (Up / Down)", -2.0, 2.0, 0.05, -400)
 
 local bobCheck = CreateFrame("CheckButton", "GN3D_BobCheck", configPanel, "UICheckButtonTemplate")
 bobCheck:SetPoint("TOPLEFT", configPanel, "TOPLEFT", 30, -440)
 _G[bobCheck:GetName() .. "Text"]:SetText(" Enable Walking Bobbing")
 
-local sBobIntensity = CreateSlider("GN3D_S_BobIntensity", "Bob Intensity", 0.1, 3.0, 0.1, -490)
+local sBobIntensity = CreateSlider(configPanel, "GN3D_S_BobIntensity", "Bob Intensity", 0.1, 3.0, 0.1, -490)
 
 bobCheck:SetScript("OnClick", function(self)
     GobNukedEm3DDB.enableBob = self:GetChecked()
@@ -547,7 +571,7 @@ sBobIntensity:SetScript("OnValueChanged", function(self, value)
     ApplyTransforms()
 end)
 
-RefreshSliderValues = function()
+RefreshUIValues = function()
     local isMH = (currentTab == "MH")
     local typeKey = isMH and "mh_type" or "oh_type"
     local overridesKey = isMH and "mh_overrides" or "oh_overrides"
@@ -559,6 +583,7 @@ RefreshSliderValues = function()
     UpdateDropdownText()
 
     bobCheck:SetChecked(GobNukedEm3DDB.enableBob == true)
+
     local valBob = GobNukedEm3DDB.bobIntensity or 1.0
     sBobIntensity:SetValue(valBob)
     GN3D_S_BobIntensityText:SetText("Bob Intensity: " .. string.format("%.1f", valBob))
@@ -581,7 +606,7 @@ RefreshSliderValues = function()
     GN3D_S_PosZText:SetText("Position Z (Up / Down): " .. string.format("%.2f", transform.posZ))
 end
 
-configPanel:SetScript("OnShow", RefreshSliderValues)
+configPanel:SetScript("OnShow", RefreshUIValues)
 
 local function BindSlider(slider, textGlobal, label, dbKey, step)
     slider:SetScript("OnValueChanged", function(self, value)
@@ -612,23 +637,23 @@ ohTab:SetSize(130, 24)
 ohTab:SetPoint("TOPRIGHT", configPanel, "TOPRIGHT", -30, -38)
 ohTab:SetText("Offhand (Left)")
 
-mhTab:SetScript("OnClick", function()
-    currentTab = "MH"
+local function SelectTab(tab)
+    currentTab = tab
     typeMenu:Hide()
-    mhTab:Disable()
-    ohTab:Enable()
-    RefreshSliderValues()
-end)
 
-ohTab:SetScript("OnClick", function()
-    currentTab = "OH"
-    typeMenu:Hide()
-    ohTab:Disable()
     mhTab:Enable()
-    RefreshSliderValues()
-end)
+    ohTab:Enable()
 
-mhTab:Disable()
+    if tab == "MH" then mhTab:Disable() end
+    if tab == "OH" then ohTab:Disable() end
+
+    RefreshUIValues()
+end
+
+mhTab:SetScript("OnClick", function() SelectTab("MH") end)
+ohTab:SetScript("OnClick", function() SelectTab("OH") end)
+
+SelectTab("MH")
 
 -- Reset Buttons
 local resetHandBtn = CreateFrame("Button", nil, configPanel, "UIPanelButtonTemplate")
@@ -652,14 +677,14 @@ resetHandBtn:SetScript("OnClick", function()
     GobNukedEm3DDB[transformsKey] = {}
 
     typeMenu:Hide()
-    RefreshSliderValues()
+    RefreshUIValues()
     UpdateWeaponModels()
 end)
 
 resetAllBtn:SetScript("OnClick", function()
     GobNukedEm3DDB = GetDefaultDB()
     typeMenu:Hide()
-    RefreshSliderValues()
+    RefreshUIValues()
     UpdateWeaponModels()
 end)
 
@@ -686,14 +711,16 @@ SlashCmdList["GOBNUKED"] = function(msg)
     end
 end
 
-fpFrame:RegisterEvent("ADDON_LOADED")
-fpFrame:RegisterEvent("PLAYER_EQUIPMENT_CHANGED")
-fpFrame:RegisterEvent("TRANSMOGRIFY_UPDATE")
-fpFrame:RegisterEvent("TRANSMOGRIFY_SUCCESS")
-fpFrame:RegisterEvent("UNIT_INVENTORY_CHANGED")
-fpFrame:RegisterEvent("UNIT_SPELLCAST_SUCCEEDED")
+-- Event frame for model updates & spellcast triggers
+local eventFrame = CreateFrame("Frame")
+eventFrame:RegisterEvent("ADDON_LOADED")
+eventFrame:RegisterEvent("PLAYER_EQUIPMENT_CHANGED")
+eventFrame:RegisterEvent("TRANSMOGRIFY_UPDATE")
+eventFrame:RegisterEvent("TRANSMOGRIFY_SUCCESS")
+eventFrame:RegisterEvent("UNIT_INVENTORY_CHANGED")
+eventFrame:RegisterEvent("UNIT_SPELLCAST_SUCCEEDED")
 
-fpFrame:SetScript("OnEvent", function(self, event, ...)
+eventFrame:SetScript("OnEvent", function(self, event, ...)
     local arg1 = ...
     if event == "ADDON_LOADED" and arg1 == "GobNukedEm3D" then
         GobNukedEm3DDB = GobNukedEm3DDB or GetDefaultDB()
@@ -702,15 +729,16 @@ fpFrame:SetScript("OnEvent", function(self, event, ...)
         GobNukedEm3DDB.mh_transforms = GobNukedEm3DDB.mh_transforms or {}
         GobNukedEm3DDB.oh_transforms = GobNukedEm3DDB.oh_transforms or {}
     elseif event == "UNIT_SPELLCAST_SUCCEEDED" then
-        local unitTarget = arg1
-        if unitTarget == "player" and fpFrame:IsShown() then
+        if arg1 == "player" and fpFrame:IsShown() then
             TriggerAttackAnimation()
         end
     elseif event == "PLAYER_EQUIPMENT_CHANGED" and arg1 ~= 16 and arg1 ~= 17 then
         return
     else
         if fpFrame:IsShown() then
-            C_Timer.After(0.25, UpdateWeaponModels)
+            if event == "PLAYER_EQUIPMENT_CHANGED" or event == "TRANSMOGRIFY_SUCCESS" or event == "UNIT_INVENTORY_CHANGED" then
+                C_Timer.After(0.25, UpdateWeaponModels)
+            end
         end
     end
 end)
