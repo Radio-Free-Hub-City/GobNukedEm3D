@@ -1,0 +1,10 @@
+## Interface: 120100
+## Title: Gob Nuked 'Em 3D
+## Notes: Displays a 3D first-person view of your equipped transmog weapon. Hail to the King, Mon!
+## Author: Ken Buckler - Radio Free Hub City
+## Version: 1.0.0
+## X-Curse-Project-ID: XXXXX
+## SavedVariables: 
+## SavedVariablesPerCharacter: GobNukedEm3DDB
+
+GobNukedEm3D.lua
