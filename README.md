@@ -30,4 +30,5 @@ The control modifications never really worked the way I wanted it to
 ### Changelog
 
 1.0.1 - Removed control remapping, fixed camera view in first person
+
 1.0.0 - Initial release
