@@ -52,7 +52,46 @@ configBtn:SetPoint("LEFT", toggleBtn, "RIGHT", 10, 0)
 configBtn:SetText("Configure FPS Mode")
 
 -------------------------------------------------------------------------------
--- 3. SAFE MOVEMENT DETECTOR & ANIMATION ENGINE
+-- 3. VISIBILITY & MOUNT CAMERA ENGINE
+-------------------------------------------------------------------------------
+local wasMountedState = false
+
+local function UpdateStealthAlpha()
+    if not fpFrame:IsShown() then return end
+    
+    local isStealthed = IsStealthed() or false
+    local alphaVal = isStealthed and 0.35 or 1.0
+
+    mhModel:SetAlpha(alphaVal)
+    ohModel:SetAlpha(alphaVal)
+end
+
+local function UpdateMountVisibility()
+    if not fpFrame:IsShown() then return end
+
+    local isMounted = IsMounted() or UnitInVehicle("player") or UnitOnTaxi("player") or false
+
+    if isMounted then
+        if not wasMountedState then
+            wasMountedState = true
+            mhModel:Hide()
+            ohModel:Hide()
+            -- Zoom camera out for third-person mounted viewing
+            CameraZoomOut(15)
+        end
+    else
+        if wasMountedState then
+            wasMountedState = false
+            mhModel:Show()
+            ohModel:Show()
+            -- Restore first-person zoom upon dismounting
+            CameraZoomIn(50)
+        end
+    end
+end
+
+-------------------------------------------------------------------------------
+-- 4. SAFE MOVEMENT DETECTOR & ANIMATION ENGINE
 -------------------------------------------------------------------------------
 local mhAnimProgress = 0
 local ohAnimProgress = 0
@@ -123,15 +162,19 @@ local function ApplyTransforms()
             mhY = mhY - (p * 0.15)
         elseif mhType == "MELEE_1H" then
             if swingPattern == 1 then
-                mhX = mhX - (p * 0.3)
-                mhZ = mhZ - (p * 0.15)
+                mhX = mhX - (math.sin(p * math.pi) * 0.5)
+                mhY = mhY + (math.sin(p * math.pi) * 0.2)
+                mhZ = mhZ - (p * 0.25)
+                mhFacing = mhFacing + (p * 0.6)
             elseif swingPattern == 2 then
-                mhX = mhX + (p * 0.25)
-                mhZ = mhZ + (p * 0.1)
-                mhFacing = mhFacing - (p * 0.4)
+                mhX = mhX + (math.sin(p * math.pi) * 0.45)
+                mhY = mhY + (math.sin(p * math.pi) * 0.15)
+                mhZ = mhZ + (p * 0.2)
+                mhFacing = mhFacing - (p * 0.5)
             elseif swingPattern == 3 then
-                mhY = mhY + (p * 0.25)
-                mhZ = mhZ - (p * 0.1)
+                mhY = mhY + (p * 0.4)
+                mhZ = mhZ - (math.sin(p * math.pi) * 0.3)
+                mhFacing = mhFacing + (p * 0.3)
             end
         elseif mhType == "MELEE_2H" then
             if swingPattern == 1 then
@@ -191,15 +234,19 @@ local function ApplyTransforms()
             ohZ = ohZ + (p * 0.1)
         elseif ohType == "MELEE_1H" then
             if swingPattern == 1 then
-                ohX = ohX + (p * 0.3)
-                ohZ = ohZ - (p * 0.15)
+                ohX = ohX + (math.sin(p * math.pi) * 0.5)
+                ohY = ohY + (math.sin(p * math.pi) * 0.2)
+                ohZ = ohZ - (p * 0.25)
+                ohFacing = ohFacing - (p * 0.6)
             elseif swingPattern == 2 then
-                ohX = ohX - (p * 0.25)
-                ohZ = ohZ + (p * 0.1)
-                ohFacing = ohFacing + (p * 0.4)
+                ohX = ohX - (math.sin(p * math.pi) * 0.45)
+                ohY = ohY + (math.sin(p * math.pi) * 0.15)
+                ohZ = ohZ + (p * 0.2)
+                ohFacing = ohFacing + (p * 0.5)
             elseif swingPattern == 3 then
-                ohY = ohY + (p * 0.25)
-                ohZ = ohZ - (p * 0.1)
+                ohY = ohY + (p * 0.4)
+                ohZ = ohZ - (math.sin(p * math.pi) * 0.3)
+                ohFacing = ohFacing - (p * 0.3)
             end
         elseif ohType == "MELEE_2H" then
             if swingPattern == 1 then
@@ -258,6 +305,8 @@ local function ApplyTransforms()
     ohModel:SetModelScale(ohScale)
     ohModel:SetFacing(ohFacing)
     ohModel:SetPosition(ohY, ohX, ohZ)
+
+    UpdateStealthAlpha()
 end
 
 mhModel:SetScript("OnModelLoaded", ApplyTransforms)
@@ -272,12 +321,12 @@ fpFrame:SetScript("OnUpdate", function(self, elapsed)
     end
 
     if mhAnimProgress > 0 then
-        mhAnimProgress = math.max(0, mhAnimProgress - (elapsed * 5.0))
+        mhAnimProgress = math.max(0, mhAnimProgress - (elapsed * 3.5))
         updated = true
     end
 
     if ohAnimProgress > 0 then
-        ohAnimProgress = math.max(0, ohAnimProgress - (elapsed * 5.0))
+        ohAnimProgress = math.max(0, ohAnimProgress - (elapsed * 3.5))
         updated = true
     end
 
@@ -311,7 +360,7 @@ local function TriggerAttackAnimation()
 end
 
 -------------------------------------------------------------------------------
--- 4. CORE ITEM RENDERING LOGIC
+-- 5. CORE ITEM RENDERING LOGIC
 -------------------------------------------------------------------------------
 local function GetWeaponItemID(slotID)
     local isMH = (slotID == 16)
@@ -352,6 +401,36 @@ end
 
 local function RenderSlot(modelFrame, slotID)
     modelFrame:ClearModel()
+    
+    local isMH = (slotID == 16)
+    local typeKey = isMH and "mh_type" or "oh_type"
+    local overridesKey = isMH and "mh_overrides" or "oh_overrides"
+
+    local currentType = GobNukedEm3DDB[typeKey] or (isMH and "GUN" or "MELEE_1H")
+    if currentType == "NONE" then return end
+
+    local overrides = GobNukedEm3DDB[overridesKey] or {}
+    local overrideVal = overrides[currentType]
+
+    if overrideVal and overrideVal ~= "" then
+        local numVal = tonumber(overrideVal)
+        if numVal then
+            if numVal > 250000 then
+                modelFrame:SetModel(numVal)
+                return
+            else
+                modelFrame:SetItem(numVal)
+                return
+            end
+        else
+            local itemID = GetItemInfoInstant(overrideVal)
+            if itemID then
+                modelFrame:SetItem(itemID)
+                return
+            end
+        end
+    end
+
     local itemID = GetWeaponItemID(slotID)
     if itemID then
         modelFrame:SetItem(itemID)
@@ -366,12 +445,10 @@ local function UpdateWeaponModels()
 end
 
 -------------------------------------------------------------------------------
--- 5. FPS CONTROLS & CAMERA DYNAMICS
+-- 6. FPS CONTROLS & CAMERA DYNAMICS
 -------------------------------------------------------------------------------
-local originalKeyA = nil
-local originalKeyD = nil
-
 local function EnableFPSControls()
+    wasMountedState = false
     GobNukedEm3DDB.savedZoom = GetCameraZoom()
     CameraZoomIn(50)
 
@@ -379,17 +456,15 @@ local function EnableFPSControls()
     SetCVar("cameraTerrainTilt", 1)
     SetCVar("cameraMode", 1)
 
-    originalKeyA = GetBindingAction("A")
-    originalKeyD = GetBindingAction("D")
-    SetBinding("A", "STRAFELEFT")
-    SetBinding("D", "STRAFERIGHT")
-
     fpFrame:Show()
     UpdateWeaponModels()
+    UpdateStealthAlpha()
+    UpdateMountVisibility()
 end
 
 local function DisableFPSControls()
     fpFrame:Hide()
+    wasMountedState = false
 
     if GobNukedEm3DDB.savedZoom and GobNukedEm3DDB.savedZoom > 0 then
         CameraZoomOut(GobNukedEm3DDB.savedZoom)
@@ -397,9 +472,6 @@ local function DisableFPSControls()
 
     SetCVar("cameraSmoothStyle", 1)
     SetCVar("cameraTerrainTilt", 0)
-
-    if originalKeyA then SetBinding("A", originalKeyA) else SetBinding("A", "TURNLEFT") end
-    if originalKeyD then SetBinding("D", originalKeyD) else SetBinding("D", "TURNRIGHT") end
 end
 
 local function ToggleFPSMode()
@@ -416,7 +488,7 @@ local function ToggleFPSMode()
 end
 
 -------------------------------------------------------------------------------
--- 6. TAINT-PROOF CUSTOM CONFIGURATION PANEL
+-- 7. TAINT-PROOF CUSTOM CONFIGURATION PANEL
 -------------------------------------------------------------------------------
 local configPanel = CreateFrame("Frame", "GobNukedEm3DConfig", UIParent)
 configPanel:SetSize(340, 580)
@@ -689,7 +761,7 @@ resetAllBtn:SetScript("OnClick", function()
 end)
 
 -------------------------------------------------------------------------------
--- 7. SLASH COMMANDS & EVENT LISTENERS
+-- 8. SLASH COMMANDS & EVENT LISTENERS
 -------------------------------------------------------------------------------
 toggleBtn:SetScript("OnClick", ToggleFPSMode)
 
@@ -711,7 +783,7 @@ SlashCmdList["GOBNUKED"] = function(msg)
     end
 end
 
--- Event frame for model updates & spellcast triggers
+-- Event frame for model updates, stealth changes, mount visibility & spellcast triggers
 local eventFrame = CreateFrame("Frame")
 eventFrame:RegisterEvent("ADDON_LOADED")
 eventFrame:RegisterEvent("PLAYER_EQUIPMENT_CHANGED")
@@ -719,6 +791,10 @@ eventFrame:RegisterEvent("TRANSMOGRIFY_UPDATE")
 eventFrame:RegisterEvent("TRANSMOGRIFY_SUCCESS")
 eventFrame:RegisterEvent("UNIT_INVENTORY_CHANGED")
 eventFrame:RegisterEvent("UNIT_SPELLCAST_SUCCEEDED")
+eventFrame:RegisterEvent("UPDATE_STEALTH")
+eventFrame:RegisterEvent("UNIT_AURA")
+eventFrame:RegisterEvent("PLAYER_MOUNT_DISPLAY_CHANGED")
+eventFrame:RegisterEvent("VEHICLE_UPDATE")
 
 eventFrame:SetScript("OnEvent", function(self, event, ...)
     local arg1 = ...
@@ -732,6 +808,10 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
         if arg1 == "player" and fpFrame:IsShown() then
             TriggerAttackAnimation()
         end
+    elseif event == "UPDATE_STEALTH" or (event == "UNIT_AURA" and arg1 == "player") then
+        UpdateStealthAlpha()
+    elseif event == "PLAYER_MOUNT_DISPLAY_CHANGED" or event == "VEHICLE_UPDATE" then
+        UpdateMountVisibility()
     elseif event == "PLAYER_EQUIPMENT_CHANGED" and arg1 ~= 16 and arg1 ~= 17 then
         return
     else
