@@ -2,9 +2,8 @@
 
 GobNukedEm3D transforms your World of Warcraft gameplay into an immersive, retro-style First-Person Shooter experience. Designed with dynamic 3D weapon rendering, combat recoil, and character-bound camera controls, this lightweight addon brings authentic FPS combat dynamics directly into the game engine.
 
-> **IMPORTANT CONTROL WARNING:**  
-> Enabling **FPS Mode** will temporarily rebind your **A** and **D** movement keys to **Strafe Left** and **Strafe Right** for true WASD FPS-style movement. All other default gameplay controls—including mouse camera movement/look, targeting, action bars, and spell casting—remain completely unchanged. Your original movement keybindings SHOULD be restored whenever FPS Mode is toggled off, but if anything goes wrong this may not work properly. USE AT YOUR OWN RISK.
-
+> **Control Modifications Removed**
+The control modifications never really worked the way I wanted it to
 ---
 
 ### Key Features
@@ -27,3 +26,8 @@ GobNukedEm3D transforms your World of Warcraft gameplay into an immersive, retro
 ### Known Bugs
 
 * Does not currently properly detect transmog appearances
+
+### Changelog
+
+1.0.1 - Removed control remapping, fixed camera view in first person
+1.0.0 - Initial release
