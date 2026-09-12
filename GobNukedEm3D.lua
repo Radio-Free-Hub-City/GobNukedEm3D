@@ -452,9 +452,13 @@ local function EnableFPSControls()
     GobNukedEm3DDB.savedZoom = GetCameraZoom()
     CameraZoomIn(50)
 
-    SetCVar("cameraSmoothStyle", 0)
+    -- 4 = Always adjust camera orientation to character facing direction
+    SetCVar("cameraSmoothStyle", 4)
     SetCVar("cameraTerrainTilt", 1)
     SetCVar("cameraMode", 1)
+
+    -- Locks dynamic pitch tracking to the character perspective
+    SetCVar("test_cameraDynamicPitch", 1)
 
     fpFrame:Show()
     UpdateWeaponModels()
@@ -472,6 +476,7 @@ local function DisableFPSControls()
 
     SetCVar("cameraSmoothStyle", 1)
     SetCVar("cameraTerrainTilt", 0)
+    SetCVar("test_cameraDynamicPitch", 0)
 end
 
 local function ToggleFPSMode()
