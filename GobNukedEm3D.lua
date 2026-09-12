@@ -447,18 +447,28 @@ end
 -------------------------------------------------------------------------------
 -- 6. FPS CONTROLS & CAMERA DYNAMICS
 -------------------------------------------------------------------------------
+local savedCVars = {}
+
 local function EnableFPSControls()
     wasMountedState = false
-    GobNukedEm3DDB.savedZoom = GetCameraZoom()
-    CameraZoomIn(50)
+    
+    -- Snapshot current camera position/pitch/zoom into view slot 5
+    SaveView(5)
 
-    -- 4 = Always adjust camera orientation to character facing direction
+    -- Save user's original CVar settings prior to changing them
+    savedCVars.cameraSmoothStyle = GetCVar("cameraSmoothStyle")
+    savedCVars.cameraTerrainTilt = GetCVar("cameraTerrainTilt")
+    savedCVars.cameraMode = GetCVar("cameraMode")
+    savedCVars.test_cameraDynamicPitch = GetCVar("test_cameraDynamicPitch")
+
+    -- Enable FPS settings
     SetCVar("cameraSmoothStyle", 4)
     SetCVar("cameraTerrainTilt", 1)
     SetCVar("cameraMode", 1)
-
-    -- Locks dynamic pitch tracking to the character perspective
     SetCVar("test_cameraDynamicPitch", 1)
+
+    -- Zoom camera fully in for FPS view
+    CameraZoomIn(50)
 
     fpFrame:Show()
     UpdateWeaponModels()
@@ -470,13 +480,14 @@ local function DisableFPSControls()
     fpFrame:Hide()
     wasMountedState = false
 
-    if GobNukedEm3DDB.savedZoom and GobNukedEm3DDB.savedZoom > 0 then
-        CameraZoomOut(GobNukedEm3DDB.savedZoom)
-    end
+    -- Restore exact pre-FPS camera settings
+    if savedCVars.cameraSmoothStyle ~= nil then SetCVar("cameraSmoothStyle", savedCVars.cameraSmoothStyle) else SetCVar("cameraSmoothStyle", 1) end
+    if savedCVars.cameraTerrainTilt ~= nil then SetCVar("cameraTerrainTilt", savedCVars.cameraTerrainTilt) else SetCVar("cameraTerrainTilt", 0) end
+    if savedCVars.cameraMode ~= nil then SetCVar("cameraMode", savedCVars.cameraMode) else SetCVar("cameraMode", 0) end
+    if savedCVars.test_cameraDynamicPitch ~= nil then SetCVar("test_cameraDynamicPitch", savedCVars.test_cameraDynamicPitch) else SetCVar("test_cameraDynamicPitch", 0) end
 
-    SetCVar("cameraSmoothStyle", 1)
-    SetCVar("cameraTerrainTilt", 0)
-    SetCVar("test_cameraDynamicPitch", 0)
+    -- Restore snapshot camera view
+    SetView(5)
 end
 
 local function ToggleFPSMode()
