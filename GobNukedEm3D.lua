@@ -452,22 +452,26 @@ local savedCVars = {}
 local function EnableFPSControls()
     wasMountedState = false
     
-    -- Snapshot current camera position/pitch/zoom into view slot 5
-    SaveView(5)
+    -- Record current 3rd-person zoom level to restore on exit
+    GobNukedEm3DDB.savedZoom = GetCameraZoom()
 
-    -- Save user's original CVar settings prior to changing them
+    -- Save user's original CVar settings prior to entering FPS mode
     savedCVars.cameraSmoothStyle = GetCVar("cameraSmoothStyle")
     savedCVars.cameraTerrainTilt = GetCVar("cameraTerrainTilt")
     savedCVars.cameraMode = GetCVar("cameraMode")
     savedCVars.test_cameraDynamicPitch = GetCVar("test_cameraDynamicPitch")
 
-    -- Enable FPS settings
+    -- Enable dynamic FPS alignment CVars
     SetCVar("cameraSmoothStyle", 4)
     SetCVar("cameraTerrainTilt", 1)
     SetCVar("cameraMode", 1)
     SetCVar("test_cameraDynamicPitch", 1)
 
-    -- Zoom camera fully in for FPS view
+    -- Reset View 5 to default (facing directly forward behind player) and snap camera to it
+    ResetView(5)
+    SetView(5)
+
+    -- Zoom directly in to 1st person perspective along character facing vector
     CameraZoomIn(50)
 
     fpFrame:Show()
@@ -480,14 +484,17 @@ local function DisableFPSControls()
     fpFrame:Hide()
     wasMountedState = false
 
-    -- Restore exact pre-FPS camera settings
+    -- Restore original pre-FPS CVars
     if savedCVars.cameraSmoothStyle ~= nil then SetCVar("cameraSmoothStyle", savedCVars.cameraSmoothStyle) else SetCVar("cameraSmoothStyle", 1) end
     if savedCVars.cameraTerrainTilt ~= nil then SetCVar("cameraTerrainTilt", savedCVars.cameraTerrainTilt) else SetCVar("cameraTerrainTilt", 0) end
     if savedCVars.cameraMode ~= nil then SetCVar("cameraMode", savedCVars.cameraMode) else SetCVar("cameraMode", 0) end
     if savedCVars.test_cameraDynamicPitch ~= nil then SetCVar("test_cameraDynamicPitch", savedCVars.test_cameraDynamicPitch) else SetCVar("test_cameraDynamicPitch", 0) end
 
-    -- Restore snapshot camera view
-    SetView(5)
+    -- Reset View 5 preset and zoom out to original third-person distance
+    ResetView(5)
+    if GobNukedEm3DDB.savedZoom and GobNukedEm3DDB.savedZoom > 0 then
+        CameraZoomOut(GobNukedEm3DDB.savedZoom)
+    end
 end
 
 local function ToggleFPSMode()
