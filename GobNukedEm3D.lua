@@ -4,8 +4,11 @@
 -------------------------------------------------------------------------------
 
 -------------------------------------------------------------------------------
--- 1. SAVED VARIABLES & DEFAULTS
+-- 1. SAVED VARIABLES & DEFAULTS & MIDNIGHT 12.0 HELPERS
 -------------------------------------------------------------------------------
+-- Pre-12.0 fallback for Midnight's Secret Values API
+local issecretvalue = issecretvalue or function() return false end
+
 local DEFAULT_TRANSFORM_MH = { scale = 2.5, facing = 3.5, posX = 0.3, posY = 0.0, posZ = -0.2 }
 local DEFAULT_TRANSFORM_OH = { scale = 2.5, facing = 2.8, posX = -0.3, posY = 0.0, posZ = -0.2 }
 
@@ -19,7 +22,11 @@ local function GetDefaultDB()
         oh_transforms = {},
         enableBob = false,
         bobIntensity = 1.0,
-        savedZoom = 0
+        savedZoom = 0,
+        showDoomBar = true,
+        lockDoomBar = false,
+        doomBarScale = 1.0,
+        doomBarPos = { point = "BOTTOM", relativePoint = "BOTTOM", x = 0, y = 25 }
     }
 end
 
@@ -76,7 +83,6 @@ local function UpdateMountVisibility()
             wasMountedState = true
             mhModel:Hide()
             ohModel:Hide()
-            -- Zoom camera out for third-person mounted viewing
             CameraZoomOut(15)
         end
     else
@@ -84,7 +90,6 @@ local function UpdateMountVisibility()
             wasMountedState = false
             mhModel:Show()
             ohModel:Show()
-            -- Restore first-person zoom upon dismounting
             CameraZoomIn(50)
         end
     end
@@ -445,52 +450,281 @@ local function UpdateWeaponModels()
 end
 
 -------------------------------------------------------------------------------
--- 6. FPS CONTROLS & CAMERA DYNAMICS
+-- 6. DOOM-STYLE MOVABLE STATUS BAR (HEALTH / AMMO / ARMOR / PORTRAIT)
+-------------------------------------------------------------------------------
+local doomFrame = CreateFrame("Frame", "GobNukedEm3DDoomBar", UIParent)
+doomFrame:SetSize(460, 58)
+doomFrame:SetFrameStrata("HIGH")
+doomFrame:SetMovable(true)
+doomFrame:EnableMouse(true)
+doomFrame:RegisterForDrag("LeftButton")
+doomFrame:Hide()
+
+local doomBg = doomFrame:CreateTexture(nil, "BACKGROUND")
+doomBg:SetAllPoints(doomFrame)
+doomBg:SetColorTexture(0.12, 0.12, 0.14, 0.95)
+
+local doomBorder = doomFrame:CreateTexture(nil, "BORDER")
+doomBorder:SetPoint("TOPLEFT", doomFrame, "TOPLEFT", -2, 2)
+doomBorder:SetPoint("BOTTOMRIGHT", doomFrame, "BOTTOMRIGHT", 2, -2)
+doomBorder:SetColorTexture(0.3, 0.3, 0.35, 1)
+
+local function CreateDoomSection(parent, leftOffset, width, labelText)
+    local panel = CreateFrame("Frame", nil, parent)
+    panel:SetSize(width, 50)
+    panel:SetPoint("LEFT", parent, "TOPLEFT", leftOffset, -29)
+
+    local bg = panel:CreateTexture(nil, "BACKGROUND")
+    bg:SetAllPoints(panel)
+    bg:SetColorTexture(0.05, 0.05, 0.07, 0.9)
+
+    local bar = CreateFrame("StatusBar", nil, panel)
+    bar:SetPoint("BOTTOMLEFT", panel, "BOTTOMLEFT", 2, 2)
+    bar:SetPoint("BOTTOMRIGHT", panel, "BOTTOMRIGHT", -2, 2)
+    bar:SetHeight(5)
+    bar:SetStatusBarTexture("Interface\\TargetingFrame\\UI-StatusBar")
+
+    local text = panel:CreateFontString(nil, "OVERLAY", "GameFontNormalHuge")
+    text:SetPoint("CENTER", panel, "CENTER", 0, 4)
+    text:SetTextColor(0.95, 0.15, 0.15, 1)
+
+    local lbl = parent:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    lbl:SetPoint("BOTTOM", panel, "TOP", 0, 3)
+    lbl:SetText(labelText)
+    lbl:SetTextColor(0.7, 0.7, 0.7, 1)
+
+    return bar, text, lbl
+end
+
+-- AMMO (Panel 1)
+local doomAmmoBar, doomAmmoText, doomAmmoLabel = CreateDoomSection(doomFrame, 10, 110, "AMMO")
+doomAmmoBar:SetStatusBarColor(0.95, 0.6, 0.1)
+
+-- HEALTH (Panel 2)
+local doomHealthBar, doomHealthText, _ = CreateDoomSection(doomFrame, 125, 110, "HEALTH")
+doomHealthBar:SetStatusBarColor(0.85, 0.1, 0.1)
+
+-- 3D PORTRAIT MODEL (Panel 3)
+local doomPortraitPanel = CreateFrame("Frame", "GobNukedEm3DDoomPortrait", doomFrame)
+doomPortraitPanel:SetSize(70, 50)
+doomPortraitPanel:SetPoint("LEFT", doomFrame, "TOPLEFT", 240, -29)
+
+local portraitBg = doomPortraitPanel:CreateTexture(nil, "BACKGROUND")
+portraitBg:SetAllPoints(doomPortraitPanel)
+portraitBg:SetColorTexture(0.04, 0.04, 0.04, 1)
+
+local portraitBorder = doomPortraitPanel:CreateTexture(nil, "BORDER")
+portraitBorder:SetPoint("TOPLEFT", doomPortraitPanel, "TOPLEFT", -1, 1)
+portraitBorder:SetPoint("BOTTOMRIGHT", doomPortraitPanel, "BOTTOMRIGHT", 1, -1)
+portraitBorder:SetColorTexture(0.4, 0.4, 0.4, 1)
+
+local portraitLabel = doomFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+portraitLabel:SetPoint("BOTTOM", doomPortraitPanel, "TOP", 0, 3)
+portraitLabel:SetText("HERO")
+portraitLabel:SetTextColor(0.7, 0.7, 0.7, 1)
+
+local doomPortraitModel = CreateFrame("PlayerModel", nil, doomPortraitPanel)
+doomPortraitModel:SetAllPoints(doomPortraitPanel)
+
+-- ARMOR (Panel 4)
+local doomArmorBar, doomArmorText, _ = CreateDoomSection(doomFrame, 315, 135, "ARMOR")
+doomArmorBar:SetStatusBarColor(0.2, 0.55, 0.9)
+
+-- Dragging Handlers
+doomFrame:SetScript("OnDragStart", function(self)
+    if not GobNukedEm3DDB.lockDoomBar then
+        self:StartMoving()
+    end
+end)
+
+doomFrame:SetScript("OnDragStop", function(self)
+    self:StopMovingOrSizing()
+    local point, _, relativePoint, x, y = self:GetPoint()
+    GobNukedEm3DDB.doomBarPos = { point = point, relativePoint = relativePoint, x = x, y = y }
+end)
+
+-- Midnight 12.0 Secret-Safe Update Functions
+local function UpdateDoomPortrait()
+    if not doomFrame:IsShown() then return end
+    doomPortraitModel:ClearModel()
+    doomPortraitModel:SetUnit("player")
+    doomPortraitModel:SetPortraitZoom(1)
+    doomPortraitModel:SetPosition(0, 0, 0)
+end
+
+local function UpdateDoomHealth()
+    if not doomFrame:IsShown() then return end
+    
+    local hp = UnitHealth("player")
+    local maxHp = UnitHealthMax("player")
+    
+    pcall(function()
+        doomHealthBar:SetMinMaxValues(0, maxHp or 1)
+        doomHealthBar:SetValue(hp or 0)
+    end)
+
+    -- Midnight Secret-Safe Rounded Percentage Display Logic
+    if UnitHealthPercent then
+        local curve = CurveConstants and CurveConstants.ScaleTo100
+        local pct = UnitHealthPercent("player", true, curve)
+        
+        if issecretvalue(pct) then
+            pcall(function()
+                doomHealthText:SetFormattedText("%.0f%%", pct)
+            end)
+        elseif type(pct) == "number" then
+            local val = (pct <= 1.0 and not curve) and (pct * 100) or pct
+            doomHealthText:SetText(math.floor(val + 0.5) .. "%")
+        elseif pct then
+            pcall(function()
+                doomHealthText:SetFormattedText("%.0f%%", pct)
+            end)
+        end
+    elseif not issecretvalue(hp) and not issecretvalue(maxHp) then
+        local maxVal = (maxHp and maxHp > 0) and maxHp or 1
+        local currentHp = hp or 0
+        local pct = math.floor(((currentHp / maxVal) * 100) + 0.5)
+        doomHealthText:SetText(pct .. "%")
+    else
+        pcall(function()
+            doomHealthText:SetFormattedText("%.0f%%", hp)
+        end)
+    end
+end
+
+local function UpdateDoomAmmo()
+    if not doomFrame:IsShown() then return end
+    
+    local powerType = UnitPowerType("player")
+    local power = UnitPower("player", powerType)
+    local maxPower = UnitPowerMax("player", powerType)
+    
+    if issecretvalue(power) or issecretvalue(maxPower) then
+        pcall(function()
+            doomAmmoBar:SetMinMaxValues(0, maxPower)
+            doomAmmoBar:SetValue(power)
+            doomAmmoText:SetFormattedText("%.0f", power)
+        end)
+    else
+        local maxVal = (maxPower and maxPower > 0) and maxPower or 1
+        local currentPower = power or 0
+        doomAmmoBar:SetMinMaxValues(0, maxVal)
+        doomAmmoBar:SetValue(currentPower)
+        if type(currentPower) == "number" then
+            doomAmmoText:SetText(tostring(math.floor(currentPower + 0.5)))
+        else
+            doomAmmoText:SetFormattedText("%.0f", currentPower)
+        end
+    end
+end
+
+local function UpdateDoomArmor()
+    if not doomFrame:IsShown() then return end
+    
+    local _, effectiveArmor = UnitArmor("player")
+    effectiveArmor = effectiveArmor or 0
+    
+    if issecretvalue(effectiveArmor) then
+        pcall(function()
+            doomArmorBar:SetMinMaxValues(0, 100000)
+            doomArmorBar:SetValue(effectiveArmor)
+            doomArmorText:SetFormattedText("%.0f%%", effectiveArmor)
+        end)
+    else
+        local level = UnitLevel("player") or 80
+        local armorPct = 0
+        
+        if C_PaperDollInfo and C_PaperDollInfo.GetArmorEffectiveness then
+            local ok, mit = pcall(C_PaperDollInfo.GetArmorEffectiveness, effectiveArmor, level)
+            if ok and mit and not issecretvalue(mit) and type(mit) == "number" then
+                armorPct = (mit <= 1.0) and (mit * 100) or mit
+            end
+        end
+
+        if armorPct == 0 and C_PaperDollInfo and C_PaperDollInfo.GetArmorEffectivenessAgainstTarget then
+            local ok, mit = pcall(C_PaperDollInfo.GetArmorEffectivenessAgainstTarget, effectiveArmor)
+            if ok and mit and not issecretvalue(mit) and type(mit) == "number" then
+                armorPct = (mit <= 1.0) and (mit * 100) or mit
+            end
+        end
+
+        local displayPct = math.floor(armorPct + 0.5)
+        displayPct = math.min(100, math.max(0, displayPct))
+        
+        doomArmorBar:SetMinMaxValues(0, 100)
+        doomArmorBar:SetValue(displayPct)
+        doomArmorText:SetText(displayPct .. "%")
+    end
+end
+
+local function UpdateAllDoomStats()
+    UpdateDoomHealth()
+    UpdateDoomAmmo()
+    UpdateDoomArmor()
+    UpdateDoomPortrait()
+end
+
+local function UpdateDoomBarVisibility()
+    if GobNukedEm3DDB.showDoomBar and fpFrame:IsShown() then
+        doomFrame:Show()
+        UpdateAllDoomStats()
+    else
+        doomFrame:Hide()
+    end
+end
+
+local function RestoreDoomFramePosition()
+    GobNukedEm3DDB = GobNukedEm3DDB or GetDefaultDB()
+    local pos = GobNukedEm3DDB.doomBarPos or { point = "BOTTOM", relativePoint = "BOTTOM", x = 0, y = 25 }
+    doomFrame:ClearAllPoints()
+    doomFrame:SetPoint(pos.point or "BOTTOM", UIParent, pos.relativePoint or "BOTTOM", pos.x or 0, pos.y or 25)
+    doomFrame:SetScale(GobNukedEm3DDB.doomBarScale or 1.0)
+
+    UpdateDoomBarVisibility()
+end
+
+-------------------------------------------------------------------------------
+-- 7. FPS CONTROLS & CAMERA DYNAMICS
 -------------------------------------------------------------------------------
 local savedCVars = {}
 
 local function EnableFPSControls()
     wasMountedState = false
     
-    -- Record current 3rd-person zoom level to restore on exit
     GobNukedEm3DDB.savedZoom = GetCameraZoom()
 
-    -- Save user's original CVar settings prior to entering FPS mode
     savedCVars.cameraSmoothStyle = GetCVar("cameraSmoothStyle")
     savedCVars.cameraTerrainTilt = GetCVar("cameraTerrainTilt")
     savedCVars.cameraMode = GetCVar("cameraMode")
     savedCVars.test_cameraDynamicPitch = GetCVar("test_cameraDynamicPitch")
 
-    -- Enable dynamic FPS alignment CVars
     SetCVar("cameraSmoothStyle", 4)
     SetCVar("cameraTerrainTilt", 1)
     SetCVar("cameraMode", 1)
     SetCVar("test_cameraDynamicPitch", 1)
 
-    -- Reset View 5 to default (facing directly forward behind player) and snap camera to it
     ResetView(5)
     SetView(5)
 
-    -- Zoom directly in to 1st person perspective along character facing vector
     CameraZoomIn(50)
 
     fpFrame:Show()
     UpdateWeaponModels()
     UpdateStealthAlpha()
     UpdateMountVisibility()
+    UpdateDoomBarVisibility()
 end
 
 local function DisableFPSControls()
     fpFrame:Hide()
+    UpdateDoomBarVisibility()
     wasMountedState = false
 
-    -- Restore original pre-FPS CVars
     if savedCVars.cameraSmoothStyle ~= nil then SetCVar("cameraSmoothStyle", savedCVars.cameraSmoothStyle) else SetCVar("cameraSmoothStyle", 1) end
     if savedCVars.cameraTerrainTilt ~= nil then SetCVar("cameraTerrainTilt", savedCVars.cameraTerrainTilt) else SetCVar("cameraTerrainTilt", 0) end
     if savedCVars.cameraMode ~= nil then SetCVar("cameraMode", savedCVars.cameraMode) else SetCVar("cameraMode", 0) end
     if savedCVars.test_cameraDynamicPitch ~= nil then SetCVar("test_cameraDynamicPitch", savedCVars.test_cameraDynamicPitch) else SetCVar("test_cameraDynamicPitch", 0) end
 
-    -- Reset View 5 preset and zoom out to original third-person distance
     ResetView(5)
     if GobNukedEm3DDB.savedZoom and GobNukedEm3DDB.savedZoom > 0 then
         CameraZoomOut(GobNukedEm3DDB.savedZoom)
@@ -511,10 +745,10 @@ local function ToggleFPSMode()
 end
 
 -------------------------------------------------------------------------------
--- 7. TAINT-PROOF CUSTOM CONFIGURATION PANEL
+-- 8. TAINT-PROOF CUSTOM CONFIGURATION PANEL
 -------------------------------------------------------------------------------
 local configPanel = CreateFrame("Frame", "GobNukedEm3DConfig", UIParent)
-configPanel:SetSize(340, 580)
+configPanel:SetSize(340, 690)
 configPanel:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
 configPanel:SetMovable(true)
 configPanel:EnableMouse(true)
@@ -654,6 +888,17 @@ _G[bobCheck:GetName() .. "Text"]:SetText(" Enable Walking Bobbing")
 
 local sBobIntensity = CreateSlider(configPanel, "GN3D_S_BobIntensity", "Bob Intensity", 0.1, 3.0, 0.1, -490)
 
+-- Doom Bar Config Checkboxes & Scale Slider
+local doomCheck = CreateFrame("CheckButton", "GN3D_DoomCheck", configPanel, "UICheckButtonTemplate")
+doomCheck:SetPoint("TOPLEFT", configPanel, "TOPLEFT", 30, -525)
+_G[doomCheck:GetName() .. "Text"]:SetText(" Enable Doom-Style Status Bar")
+
+local doomLockCheck = CreateFrame("CheckButton", "GN3D_DoomLockCheck", configPanel, "UICheckButtonTemplate")
+doomLockCheck:SetPoint("TOPLEFT", configPanel, "TOPLEFT", 30, -550)
+_G[doomLockCheck:GetName() .. "Text"]:SetText(" Lock Doom Bar Position")
+
+local sDoomScale = CreateSlider(configPanel, "GN3D_S_DoomScale", "Doom Bar Scale", 0.5, 2.0, 0.05, -595)
+
 bobCheck:SetScript("OnClick", function(self)
     GobNukedEm3DDB.enableBob = self:GetChecked()
     ApplyTransforms()
@@ -664,6 +909,22 @@ sBobIntensity:SetScript("OnValueChanged", function(self, value)
     GobNukedEm3DDB.bobIntensity = value
     GN3D_S_BobIntensityText:SetText("Bob Intensity: " .. string.format("%.1f", value))
     ApplyTransforms()
+end)
+
+doomCheck:SetScript("OnClick", function(self)
+    GobNukedEm3DDB.showDoomBar = self:GetChecked()
+    UpdateDoomBarVisibility()
+end)
+
+doomLockCheck:SetScript("OnClick", function(self)
+    GobNukedEm3DDB.lockDoomBar = self:GetChecked()
+end)
+
+sDoomScale:SetScript("OnValueChanged", function(self, value)
+    value = math.floor(value / 0.05 + 0.5) * 0.05
+    GobNukedEm3DDB.doomBarScale = value
+    GN3D_S_DoomScaleText:SetText("Doom Bar Scale: " .. string.format("%.2f", value))
+    doomFrame:SetScale(value)
 end)
 
 RefreshUIValues = function()
@@ -678,6 +939,12 @@ RefreshUIValues = function()
     UpdateDropdownText()
 
     bobCheck:SetChecked(GobNukedEm3DDB.enableBob == true)
+    doomCheck:SetChecked(GobNukedEm3DDB.showDoomBar == true)
+    doomLockCheck:SetChecked(GobNukedEm3DDB.lockDoomBar == true)
+
+    local valDoomScale = GobNukedEm3DDB.doomBarScale or 1.0
+    sDoomScale:SetValue(valDoomScale)
+    GN3D_S_DoomScaleText:SetText("Doom Bar Scale: " .. string.format("%.2f", valDoomScale))
 
     local valBob = GobNukedEm3DDB.bobIntensity or 1.0
     sBobIntensity:SetValue(valBob)
@@ -781,10 +1048,11 @@ resetAllBtn:SetScript("OnClick", function()
     typeMenu:Hide()
     RefreshUIValues()
     UpdateWeaponModels()
+    RestoreDoomFramePosition()
 end)
 
 -------------------------------------------------------------------------------
--- 8. SLASH COMMANDS & EVENT LISTENERS
+-- 9. SLASH COMMANDS & EVENT LISTENERS
 -------------------------------------------------------------------------------
 toggleBtn:SetScript("OnClick", ToggleFPSMode)
 
@@ -806,9 +1074,10 @@ SlashCmdList["GOBNUKED"] = function(msg)
     end
 end
 
--- Event frame for model updates, stealth changes, mount visibility & spellcast triggers
+-- Event frame for model updates, stealth changes, mount visibility, spellcasts & Doom stats
 local eventFrame = CreateFrame("Frame")
 eventFrame:RegisterEvent("ADDON_LOADED")
+eventFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
 eventFrame:RegisterEvent("PLAYER_EQUIPMENT_CHANGED")
 eventFrame:RegisterEvent("TRANSMOGRIFY_UPDATE")
 eventFrame:RegisterEvent("TRANSMOGRIFY_SUCCESS")
@@ -819,6 +1088,16 @@ eventFrame:RegisterEvent("UNIT_AURA")
 eventFrame:RegisterEvent("PLAYER_MOUNT_DISPLAY_CHANGED")
 eventFrame:RegisterEvent("VEHICLE_UPDATE")
 
+-- Doom Bar Status & Portrait Events
+eventFrame:RegisterEvent("UNIT_HEALTH")
+eventFrame:RegisterEvent("UNIT_MAXHEALTH")
+eventFrame:RegisterEvent("UNIT_POWER_UPDATE")
+eventFrame:RegisterEvent("UNIT_MAXPOWER")
+eventFrame:RegisterEvent("UNIT_DISPLAYPOWER")
+eventFrame:RegisterEvent("UNIT_STATS")
+eventFrame:RegisterEvent("UNIT_MODEL_CHANGED")
+eventFrame:RegisterEvent("PLAYER_SPECIALIZATION_CHANGED")
+
 eventFrame:SetScript("OnEvent", function(self, event, ...)
     local arg1 = ...
     if event == "ADDON_LOADED" and arg1 == "GobNukedEm3D" then
@@ -827,6 +1106,18 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
         GobNukedEm3DDB.oh_overrides = GobNukedEm3DDB.oh_overrides or {}
         GobNukedEm3DDB.mh_transforms = GobNukedEm3DDB.mh_transforms or {}
         GobNukedEm3DDB.oh_transforms = GobNukedEm3DDB.oh_transforms or {}
+        RestoreDoomFramePosition()
+    elseif event == "PLAYER_ENTERING_WORLD" then
+        RestoreDoomFramePosition()
+        UpdateAllDoomStats()
+    elseif event == "UNIT_HEALTH" or event == "UNIT_MAXHEALTH" then
+        if arg1 == "player" then UpdateDoomHealth() end
+    elseif event == "UNIT_POWER_UPDATE" or event == "UNIT_MAXPOWER" or event == "UNIT_DISPLAYPOWER" then
+        if arg1 == "player" then UpdateDoomAmmo() end
+    elseif event == "UNIT_STATS" then
+        if arg1 == "player" then UpdateDoomArmor() end
+    elseif event == "UNIT_MODEL_CHANGED" or event == "PLAYER_SPECIALIZATION_CHANGED" then
+        if arg1 == "player" or not arg1 then UpdateDoomPortrait() end
     elseif event == "UNIT_SPELLCAST_SUCCEEDED" then
         if arg1 == "player" and fpFrame:IsShown() then
             TriggerAttackAnimation()
@@ -836,7 +1127,8 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
     elseif event == "PLAYER_MOUNT_DISPLAY_CHANGED" or event == "VEHICLE_UPDATE" then
         UpdateMountVisibility()
     elseif event == "PLAYER_EQUIPMENT_CHANGED" and arg1 ~= 16 and arg1 ~= 17 then
-        return
+        UpdateDoomArmor()
+        UpdateDoomPortrait()
     else
         if fpFrame:IsShown() then
             if event == "PLAYER_EQUIPMENT_CHANGED" or event == "TRANSMOGRIFY_SUCCESS" or event == "UNIT_INVENTORY_CHANGED" then
