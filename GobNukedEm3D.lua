@@ -12,6 +12,20 @@ local issecretvalue = issecretvalue or function() return false end
 local DEFAULT_TRANSFORM_MH = { scale = 2.5, facing = 3.5, posX = 0.3, posY = 0.0, posZ = -0.2 }
 local DEFAULT_TRANSFORM_OH = { scale = 2.5, facing = 2.8, posX = -0.3, posY = 0.0, posZ = -0.2 }
 
+local COMBAT_ENTER_SOUNDS = { 6178894, 6178898, 6178902, 6178906 }
+local COMBAT_EXIT_SOUNDS = { 6178762, 6178892, 6178924, 6178924 }
+
+local function PlayRandomCombatSound(soundList)
+    if not soundList or #soundList == 0 then return end
+    local soundID = soundList[math.random(#soundList)]
+    if not soundID then return end
+
+    local success, willPlay = pcall(PlaySoundFile, soundID, "Master")
+    if not success or not willPlay then
+        pcall(PlaySound, soundID, "Master")
+    end
+end
+
 local function GetDefaultDB()
     return {
         mh_type = "GUN",
@@ -26,7 +40,9 @@ local function GetDefaultDB()
         showDoomBar = true,
         lockDoomBar = false,
         doomBarScale = 1.0,
-        doomBarPos = { point = "BOTTOM", relativePoint = "BOTTOM", x = 0, y = 25 }
+        doomBarPos = { point = "BOTTOM", relativePoint = "BOTTOM", x = 0, y = 25 },
+        enableCombatEnterVoice = true,
+        enableCombatExitVoice = true,
     }
 end
 
@@ -748,7 +764,7 @@ end
 -- 8. TAINT-PROOF CUSTOM CONFIGURATION PANEL
 -------------------------------------------------------------------------------
 local configPanel = CreateFrame("Frame", "GobNukedEm3DConfig", UIParent)
-configPanel:SetSize(340, 690)
+configPanel:SetSize(340, 750)
 configPanel:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
 configPanel:SetMovable(true)
 configPanel:EnableMouse(true)
@@ -899,6 +915,15 @@ _G[doomLockCheck:GetName() .. "Text"]:SetText(" Lock Doom Bar Position")
 
 local sDoomScale = CreateSlider(configPanel, "GN3D_S_DoomScale", "Doom Bar Scale", 0.5, 2.0, 0.05, -595)
 
+-- Voice Lines Checkboxes
+local voiceEnterCheck = CreateFrame("CheckButton", "GN3D_VoiceEnterCheck", configPanel, "UICheckButtonTemplate")
+voiceEnterCheck:SetPoint("TOPLEFT", configPanel, "TOPLEFT", 30, -640)
+_G[voiceEnterCheck:GetName() .. "Text"]:SetText(" Enable Combat Enter Voice Lines")
+
+local voiceExitCheck = CreateFrame("CheckButton", "GN3D_VoiceExitCheck", configPanel, "UICheckButtonTemplate")
+voiceExitCheck:SetPoint("TOPLEFT", configPanel, "TOPLEFT", 30, -665)
+_G[voiceExitCheck:GetName() .. "Text"]:SetText(" Enable Combat Exit Voice Lines")
+
 bobCheck:SetScript("OnClick", function(self)
     GobNukedEm3DDB.enableBob = self:GetChecked()
     ApplyTransforms()
@@ -927,6 +952,14 @@ sDoomScale:SetScript("OnValueChanged", function(self, value)
     doomFrame:SetScale(value)
 end)
 
+voiceEnterCheck:SetScript("OnClick", function(self)
+    GobNukedEm3DDB.enableCombatEnterVoice = self:GetChecked()
+end)
+
+voiceExitCheck:SetScript("OnClick", function(self)
+    GobNukedEm3DDB.enableCombatExitVoice = self:GetChecked()
+end)
+
 RefreshUIValues = function()
     local isMH = (currentTab == "MH")
     local typeKey = isMH and "mh_type" or "oh_type"
@@ -941,6 +974,8 @@ RefreshUIValues = function()
     bobCheck:SetChecked(GobNukedEm3DDB.enableBob == true)
     doomCheck:SetChecked(GobNukedEm3DDB.showDoomBar == true)
     doomLockCheck:SetChecked(GobNukedEm3DDB.lockDoomBar == true)
+    voiceEnterCheck:SetChecked(GobNukedEm3DDB.enableCombatEnterVoice ~= false)
+    voiceExitCheck:SetChecked(GobNukedEm3DDB.enableCombatExitVoice ~= false)
 
     local valDoomScale = GobNukedEm3DDB.doomBarScale or 1.0
     sDoomScale:SetValue(valDoomScale)
@@ -1074,7 +1109,7 @@ SlashCmdList["GOBNUKED"] = function(msg)
     end
 end
 
--- Event frame for model updates, stealth changes, mount visibility, spellcasts & Doom stats
+-- Event frame for model updates, stealth changes, mount visibility, spellcasts, combat voice & Doom stats
 local eventFrame = CreateFrame("Frame")
 eventFrame:RegisterEvent("ADDON_LOADED")
 eventFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
@@ -1087,6 +1122,10 @@ eventFrame:RegisterEvent("UPDATE_STEALTH")
 eventFrame:RegisterEvent("UNIT_AURA")
 eventFrame:RegisterEvent("PLAYER_MOUNT_DISPLAY_CHANGED")
 eventFrame:RegisterEvent("VEHICLE_UPDATE")
+
+-- Combat Voice Events
+eventFrame:RegisterEvent("PLAYER_REGEN_DISABLED")
+eventFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
 
 -- Doom Bar Status & Portrait Events
 eventFrame:RegisterEvent("UNIT_HEALTH")
@@ -1106,10 +1145,24 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
         GobNukedEm3DDB.oh_overrides = GobNukedEm3DDB.oh_overrides or {}
         GobNukedEm3DDB.mh_transforms = GobNukedEm3DDB.mh_transforms or {}
         GobNukedEm3DDB.oh_transforms = GobNukedEm3DDB.oh_transforms or {}
+        if GobNukedEm3DDB.enableCombatEnterVoice == nil then
+            GobNukedEm3DDB.enableCombatEnterVoice = true
+        end
+        if GobNukedEm3DDB.enableCombatExitVoice == nil then
+            GobNukedEm3DDB.enableCombatExitVoice = true
+        end
         RestoreDoomFramePosition()
     elseif event == "PLAYER_ENTERING_WORLD" then
         RestoreDoomFramePosition()
         UpdateAllDoomStats()
+    elseif event == "PLAYER_REGEN_DISABLED" then
+        if GobNukedEm3DDB.enableCombatEnterVoice and fpFrame:IsShown() then
+            PlayRandomCombatSound(COMBAT_ENTER_SOUNDS)
+        end
+    elseif event == "PLAYER_REGEN_ENABLED" then
+        if GobNukedEm3DDB.enableCombatExitVoice and fpFrame:IsShown() then
+            PlayRandomCombatSound(COMBAT_EXIT_SOUNDS)
+        end
     elseif event == "UNIT_HEALTH" or event == "UNIT_MAXHEALTH" then
         if arg1 == "player" then UpdateDoomHealth() end
     elseif event == "UNIT_POWER_UPDATE" or event == "UNIT_MAXPOWER" or event == "UNIT_DISPLAYPOWER" then
