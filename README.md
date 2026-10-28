@@ -6,7 +6,7 @@ GobNukedEm3D transforms your World of Warcraft gameplay into an immersive, retro
 
 ### Key Features
 
-* **True FPS Camera Mode:** Instantly zooms into first-person view, locks camera alignment behind your view axis, and rebinds $A$/$D$ for true WASD strafe movement.
+* **True FPS Camera Mode:** Instantly zooms into first-person view, locks camera alignment behind your view axis
 * **Floating 3D Weapon Models:** Displays fully rendered 3D weapon models directly on screen without displaying character meshes or causing frame clipping.
 * **Weapon-Specific Recoil & Combos:** Dynamic attack animations triggered on spellcasts and auto-attacks, featuring multi-hit swing combos for melee weapons, heavy cleaves for 2H arms, spell pulses for staves, and kickback recoil for firearms.
 * **Auto Weapon Detect & Custom Overrides:** Automatically detects and displays your equipped weapon, while allowing custom Item ID/Link overrides per weapon type.
