@@ -1,4 +1,4 @@
-## Interface: 120105
+## Interface: 16001
 ## Title: Gob Nuked 'Em 3D
 ## Notes: Displays a 3D first-person view of your equipped transmog weapon. Hail to the King, Mon!
 ## Author: Ken Buckler - Radio Free Hub City
